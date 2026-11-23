@@ -108,41 +108,95 @@
   const whatsappShareLink = document.getElementById("whatsappShareLink");
 
   const STORAGE_KEY = "emmanuel_campaign_pledged";
-  const BASE_COUNT = 148;
+  const LOCAL_COUNT_KEY = "emmanuel_campaign_local_count";
+  const COUNTER_NAMESPACE = "manuelextra-caclha-fashion-2026";
+  const COUNTER_KEY = "votes";
+  const COUNTER_GET_URL = `https://abacus.jasoncameron.dev/get/${COUNTER_NAMESPACE}/${COUNTER_KEY}`;
+  const COUNTER_HIT_URL = `https://abacus.jasoncameron.dev/hit/${COUNTER_NAMESPACE}/${COUNTER_KEY}`;
 
   const shareText =
-    "I’m voting for Emmanuel Olaleye (@manuelextra) for Most Fashionable Male at CAC Lighthouse Youth Fellowship! Clean code, sharper style, and a story of grace. Stand with Emmanuel!";
+    "I just pledged my vote for Emmanuel Olaleye (@manuelextra) for Most Fashionable Male at CAC Lighthouse Youth Fellowship! Clean code, sharper style, and a story of grace. Go cast yours too!";
+
+  const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(shareText)}`;
 
   if (whatsappShareLink) {
-    whatsappShareLink.href = `https://wa.me/?text=${encodeURIComponent(shareText)}`;
+    whatsappShareLink.href = whatsappUrl;
   }
 
-  function syncPledgeState() {
-    const hasPledged = localStorage.getItem(STORAGE_KEY) === "true";
+  let currentCount = Number(localStorage.getItem(LOCAL_COUNT_KEY)) || 0;
+
+  function renderPledgeUI(count) {
+    const increased = count > currentCount;
+    currentCount = count;
+    localStorage.setItem(LOCAL_COUNT_KEY, String(count));
     if (pledgeCountEl) {
-      pledgeCountEl.textContent = String(hasPledged ? BASE_COUNT + 1 : BASE_COUNT);
+      pledgeCountEl.textContent = String(count);
+      if (increased) {
+        pledgeCountEl.classList.remove("bump");
+        void pledgeCountEl.offsetWidth;
+        pledgeCountEl.classList.add("bump");
+      }
     }
+    const hasPledged = localStorage.getItem(STORAGE_KEY) === "true";
     if (hasPledged && pledgeBtnText) {
-      pledgeBtnText.textContent = "Vote Pledged — Thank You ✦";
+      pledgeBtnText.textContent = "Vote Pledged — Notify on WhatsApp ✦";
     }
   }
 
-  syncPledgeState();
+  async function fetchLiveCount() {
+    try {
+      const res = await fetch(COUNTER_GET_URL, { cache: "no-store" });
+      const data = await res.json();
+      if (typeof data.value === "number") {
+        renderPledgeUI(data.value);
+      } else if (data.error === "Key not found") {
+        renderPledgeUI(0);
+      }
+    } catch {
+      // Offline or blocked: keep local fallback count
+    }
+  }
+
+  renderPledgeUI(currentCount);
+  fetchLiveCount();
+
+  // Keep vote count synced in real time across all visitors
+  setInterval(() => {
+    if (document.visibilityState === "visible") {
+      fetchLiveCount();
+    }
+  }, 4000);
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      fetchLiveCount();
+    }
+  });
 
   if (pledgeBtn) {
-    pledgeBtn.addEventListener("click", () => {
-      const alreadyPledged = localStorage.getItem(STORAGE_KEY) === "true";
-      if (!alreadyPledged) {
-        localStorage.setItem(STORAGE_KEY, "true");
-        syncPledgeState();
-        if (pledgeFeedback) {
-          pledgeFeedback.textContent =
-            "Thank you for standing with Emmanuel Olaleye! Don’t forget to cast your official fellowship vote.";
+    pledgeBtn.addEventListener("click", async () => {
+      localStorage.setItem(STORAGE_KEY, "true");
+      renderPledgeUI(currentCount + 1);
+
+      // Increment shared live counter in the background
+      try {
+        const res = await fetch(COUNTER_HIT_URL, { cache: "no-store" });
+        if (res.ok) {
+          const data = await res.json();
+          if (typeof data.value === "number") {
+            renderPledgeUI(data.value);
+          }
         }
-      } else if (pledgeFeedback) {
-        pledgeFeedback.textContent =
-          "Your pledge is already counted — share the campaign below to bring a friend along!";
+      } catch {
+        // Keep optimistic local increment
       }
+
+      if (pledgeFeedback) {
+        pledgeFeedback.textContent =
+          "Your vote is counted! Opening WhatsApp so you can notify Emmanuel or share with your chat.";
+      }
+
+      window.open(whatsappUrl, "_blank", "noopener,noreferrer");
     });
   }
 
